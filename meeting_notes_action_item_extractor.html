@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meeting Notes Action Item Extractor</title>
+<style>
+  :root { font-family: Inter, Arial, sans-serif; color: #202638; background: #f4f6fb; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; padding: 36px 16px; }
+  .app { max-width: 850px; margin: 0 auto; background: #fff; border: 1px solid #e5e9f2; border-radius: 18px; padding: 28px; box-shadow: 0 12px 35px rgba(29,42,76,.08); }
+  h1 { margin: 0 0 8px; font-size: 27px; }
+  .sub { margin: 0 0 24px; color: #687187; line-height: 1.5; }
+  label { display: block; font-weight: 650; margin: 18px 0 9px; }
+  textarea { width: 100%; min-height: 190px; resize: vertical; border: 1px solid #d8deea; border-radius: 11px; padding: 14px; font: 14px/1.6 inherit; color: #202638; outline: none; }
+  textarea:focus { border-color: #6478e8; box-shadow: 0 0 0 3px rgba(100,120,232,.13); }
+  .modes { display: flex; gap: 10px; flex-wrap: wrap; }
+  .mode { border: 1px solid #d8deea; background: #fff; padding: 10px 15px; border-radius: 9px; cursor: pointer; font-weight: 600; }
+  .mode.active { border-color: #596fe0; background: #eef0ff; color: #3548bd; }
+  button.primary { margin-top: 20px; background: #4d61d7; color: white; border: 0; border-radius: 10px; padding: 12px 18px; font-weight: 700; cursor: pointer; }
+  button.primary:hover { background: #3e51c4; }
+  .hint { color: #737d91; font-size: 13px; line-height: 1.5; margin-top: 9px; }
+  #results { margin-top: 24px; }
+  .notice { padding: 13px 15px; border-radius: 10px; background: #fff7e8; color: #78520d; line-height: 1.5; }
+  .empty { color: #687187; padding: 14px 0; }
+  .item { border: 1px solid #e3e7f0; border-radius: 11px; padding: 15px; margin-top: 11px; }
+  .item h3 { margin: 0 0 9px; font-size: 16px; }
+  .meta { color: #687187; font-size: 13px; line-height: 1.6; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; color: #4658c8; background: #eef0ff; padding: 4px 8px; border-radius: 20px; margin-bottom: 8px; }
+  @media (max-width: 540px) { .app { padding: 20px; } h1 { font-size: 22px; } }
+</style>
+</head>
+<body>
+<main class="app">
+  <h1>Meeting Notes Action Item Extractor</h1>
+  <p class="sub">Turn meeting notes into a clear list of tasks, owners and deadlines.</p>
+
+  <label for="notes">Meeting notes</label>
+  <textarea id="notes">Website revamp kickoff
+Alex: What are the main features you want on the new landing page?
+Client: We need a modern hero section, customer testimonials, and an integrated booking calendar.
+Alex: Would you prefer Calendly integration or a custom-built solution?
+Client: Calendly works fine and keeps it simple.
+Alex: Perfect, I'll prepare the initial wireframes by Wednesday.</textarea>
+
+  <label>Extraction mode</label>
+  <div class="modes">
+    <button class="mode active" id="offlineMode" type="button">Offline</button>
+    <button class="mode" id="liveMode" type="button">Gemini AI</button>
+  </div>
+  <p class="hint" id="modeHint">Offline mode uses a simple pattern: Name: task by deadline.</p>
+  <button class="primary" id="extract" type="button">✓ Extract action items</button>
+  <section id="results" aria-live="polite"></section>
+</main>
+<script>
+  const notes = document.getElementById('notes');
+  const results = document.getElementById('results');
+  const offlineButton = document.getElementById('offlineMode');
+  const liveButton = document.getElementById('liveMode');
+  const modeHint = document.getElementById('modeHint');
+  let mode = 'offline';
+
+  function setMode(next) {
+    mode = next;
+    offlineButton.classList.toggle('active', mode === 'offline');
+    liveButton.classList.toggle('active', mode === 'live');
+    modeHint.textContent = mode === 'offline'
+      ? 'Offline mode uses a simple pattern: Name: task by deadline.'
+      : 'Gemini mode needs a secure server connected to the Gemini API. Do not put your API key in this HTML file.';
+    results.innerHTML = '';
+  }
+  offlineButton.addEventListener('click', () => setMode('offline'));
+  liveButton.addEventListener('click', () => setMode('live'));
+
+  function offlineExtract(text) {
+    const actions = [];
+    const pattern = /^([^:\n]+):\s*(.+?)\s+by\s+([^\n.]+)[.]?$/i;
+    for (const line of text.split(/\r?\n/)) {
+      const match = line.trim().match(pattern);
+      if (match) actions.push({
+        owner: match[1].trim(),
+        task: match[2].trim(),
+        deadline: match[3].trim()
+      });
+    }
+    return actions;
+  }
+
+  document.getElementById('extract').addEventListener('click', () => {
+    const text = notes.value.trim();
+    if (!text) {
+      results.innerHTML = '<p class="empty">Please enter meeting notes first.</p>';
+      return;
+    }
+    if (mode === 'live') {
+      results.innerHTML = '<div class="notice"><strong>Gemini AI is not connected in this standalone HTML file.</strong><br>To use Gemini safely, connect this page to a backend server that stores the API key privately. Never expose your Gemini API key in browser code.</div>';
+      return;
+    }
+    const actions = offlineExtract(text);
+    if (!actions.length) {
+      results.innerHTML = '<p class="empty">No actions found. In offline mode, use lines in this format: <strong>Name: task by deadline</strong>.</p>';
+      return;
+    }
+    results.innerHTML = '<h2>Extracted action items</h2>' + actions.map((a, i) =>
+      `<article class="item"><span class="tag">ACTION ${i + 1}</span><h3>${escapeHtml(a.task)}</h3><div class="meta">Owner: ${escapeHtml(a.owner)}<br>Deadline: ${escapeHtml(a.deadline)}</div></article>`
+    ).join('') + '<p class="hint">Review every item against the original notes before using it.</p>';
+  });
+
+  function escapeHtml(value) {
+    return value.replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[ch]);
+  }
+</script>
+</body>
+</html>
